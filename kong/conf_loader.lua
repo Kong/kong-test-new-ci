@@ -70,6 +70,7 @@ local CONF_INFERENCES = {
   client_body_buffer_size = {typ = "string"},
   error_default_type = {enum = {"application/json", "application/xml",
                                 "text/html", "text/plain"}},
+  remote_reload = {typ = "boolean"},
 
   database = {enum = {"postgres", "cassandra"}},
   pg_port = {typ = "number"},

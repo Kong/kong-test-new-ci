@@ -33,6 +33,7 @@ real_ip_recursive = off
 client_max_body_size = 0
 client_body_buffer_size = 8k
 error_default_type = text/plain
+remote_reload = off
 
 database = postgres
 pg_host = 127.0.0.1

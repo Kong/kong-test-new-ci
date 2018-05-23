@@ -113,5 +113,47 @@ return {
 
       return helpers.responses.send_HTTP_OK(status_response)
     end
-  }
+  },
+  ["/kong/reload"] = {
+    GET = function(self, dao, helpers)
+      if not singletons.configuration.remote_reload then
+        return helpers.responses.send_HTTP_FORBIDDEN("operation not allowed")
+      end
+
+      local delay = 10 -- timeout value
+      local pl_utils = require("pl.utils")
+      local pid, err = pl_utils.readfile(singletons.configuration.nginx_pid)
+      if pid then
+        pid = tonumber(pid)  -- just grab the first number
+      else
+        return helpers.responses.send_HTTP_INTERNAL_SERVER_ERROR("failed reading pid: " .. tostring(err))
+      end
+
+      local result = {}
+      local ok, err = ngx.timer.at(delay, function(premature)  -- this timer should be cancelled by the reload
+          if premature then
+            result.result = "ok"
+          end
+        end)
+
+      if not ok then
+        return helpers.responses.send_HTTP_INTERNAL_SERVER_ERROR("failed to create timer: " .. err)
+      end
+
+      local success
+      success, result.exitcode, result.stdout, result.stderr = pl_utils.executeex("kill -s HUP " .. pid)
+      if not success then
+        return helpers.responses.send_HTTP_INTERNAL_SERVER_ERROR(result)
+      end
+
+      -- wait for the timer to be cancelled
+      local done = ngx.time() + delay
+      while ngx.time() <= done and not result.result do
+        ngx.sleep(0.1)
+      end
+      result.result = result.result or "timeout"
+
+      return helpers.responses.send_HTTP_OK(result)
+    end
+  },
 }
