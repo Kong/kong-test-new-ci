@@ -76,6 +76,17 @@ local _set_router
 local _set_router_version
 
 
+local function _set_ngx(mock_ngx)
+  if type(mock_ngx) ~= "table" then
+    return
+  end
+
+  if mock_ngx.var then
+    var = mock_ngx.var
+  end
+end
+
+
 local update_lua_mem
 do
   local pid = ngx.worker.pid
@@ -737,10 +748,12 @@ local balancer_prepare
 do
   local get_certificate = certificate.get_certificate
 
-  function balancer_prepare(ctx, scheme, host_type, host, port,
-                            service, route)
+  balancer_prepare = function(ctx, match_t, host_type, host, port,
+                              service, route)
+    local request_uri = var.request_uri
+
     local balancer_data = {
-      scheme         = scheme,    -- scheme for balancer: http, https
+      scheme         = match_t.upstream_scheme, -- scheme for balancer: http, https
       type           = host_type, -- type of 'host': ipv4, ipv6, name
       host           = host,      -- target host per `service` entity
       port           = port,      -- final target port
@@ -752,7 +765,30 @@ do
       -- hostname    = nil,       -- hostname of the final target IP
       -- hash_cookie = nil,       -- if Upstream sets hash_on_cookie
       -- balancer_handle = nil,   -- balancer handle for the current connection
+      uri = {                     -- components for upstream uri construction
+        strip_path          = route.strip_path,
+        request_uri         = request_uri,
+        upstream_postfix    = match_t.upstream_uri_postfix or "",
+        upstream_prefix     = (service or EMPTY_T).path or "/",
+        -- downstream_match = nil,
+      }
     }
+
+    do
+      if request_uri then
+        local idx = request_uri:find("?", 2, true)
+
+        if idx then
+          idx = idx - 1
+        else
+          idx = #request_uri
+        end
+
+        idx = idx - #(match_t.upstream_uri_postfix or "")
+
+        balancer_data.uri.downstream_match = request_uri:sub(1, idx)
+      end
+    end
 
     do
       local s = service or EMPTY_T
@@ -815,6 +851,36 @@ local function balancer_execute(ctx)
 end
 
 
+local function build_upstream_uri(components)
+  local upstream_uri
+  local postfix = components.upstream_postfix
+  local prefix = components.upstream_prefix or "/"
+
+  if components.strip_path then
+    -- we drop the matched part, replacing it with the upstream path
+    if sub(prefix, -1, -1) == "/" and
+       sub(postfix, 1, 1) == "/" then
+      -- double "/", so drop the first
+      upstream_uri = sub(prefix, 1, -2) .. postfix
+
+    else
+      upstream_uri = prefix .. postfix
+    end
+
+  else
+    -- we retain the incoming path, just prefix it with the upstream
+    -- path, but skip the initial slash
+    upstream_uri = prefix .. sub(components.request_uri, 2, -1)
+  end
+
+  if var.is_args == "?" or sub(var.request_uri, -1) == "?" then
+    upstream_uri = upstream_uri .. "?" .. (var.args or "")
+  end
+
+  return upstream_uri
+end
+
+
 local function set_init_versions_in_cache()
   local ok, err = kong.cache:get("router:version", TTL_ZERO, function()
     return "init"
@@ -852,8 +918,10 @@ return {
   _set_build_router = _set_build_router,
   _set_router_version = _set_router_version,
   _set_update_plugins_iterator = _set_update_plugins_iterator,
+  _set_ngx = _set_ngx,
   _get_updated_router = get_updated_router,
   _update_lua_mem = update_lua_mem,
+  _build_upstream_uri = build_upstream_uri,
 
   init_worker = {
     before = function()
@@ -1002,7 +1070,7 @@ return {
         upstream_url_t.port = tonumber(var.server_port, 10)
       end
 
-      balancer_prepare(ctx, match_t.upstream_scheme,
+      balancer_prepare(ctx, match_t,
                        upstream_url_t.type,
                        upstream_url_t.host,
                        upstream_url_t.port,
@@ -1233,7 +1301,7 @@ return {
         upstream_url_t.port = service_port
       end
 
-      balancer_prepare(ctx, match_t.upstream_scheme,
+      balancer_prepare(ctx, match_t,
                        upstream_url_t.type,
                        upstream_url_t.host,
                        upstream_url_t.port,
@@ -1245,7 +1313,6 @@ return {
       --       router, which might have truncated it (`strip_uri`).
       -- `host` is the original header to be preserved if set.
       var.upstream_scheme = match_t.upstream_scheme -- COMPAT: pdk
-      var.upstream_uri    = match_t.upstream_uri
       var.upstream_host   = match_t.upstream_host
 
       -- Keep-Alive and WebSocket Protocol Upgrade Headers
@@ -1286,20 +1353,12 @@ return {
     end,
     -- Only executed if the `router` module found a route and allows nginx to proxy it.
     after = function(ctx)
-      do
-        -- Nginx's behavior when proxying a request with an empty querystring
-        -- `/foo?` is to keep `$is_args` an empty string, hence effectively
-        -- stripping the empty querystring.
-        -- We overcome this behavior with our own logic, to preserve user
-        -- desired semantics.
-        local upstream_uri = var.upstream_uri
+      local balancer_data = ctx.balancer_data
 
-        if var.is_args == "?" or sub(var.request_uri, -1) == "?" then
-          var.upstream_uri = upstream_uri .. "?" .. (var.args or "")
-        end
+      if balancer_data.uri.request_uri then
+        var.upstream_uri = build_upstream_uri(balancer_data.uri)
       end
 
-      local balancer_data = ctx.balancer_data
       balancer_data.scheme = var.upstream_scheme -- COMPAT: pdk
 
       local ok, err, errcode = balancer_execute(ctx)
