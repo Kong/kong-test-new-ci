@@ -19,12 +19,6 @@ local sub = string.sub
 local PING_INTERVAL = 3600
 local PING_KEY = "events:reports"
 local REQUEST_COUNT_KEY       = "events:requests"
-local HTTP_REQUEST_COUNT_KEY  = "events:requests:http"
-local HTTPS_REQUEST_COUNT_KEY = "events:requests:https"
-local GRPC_REQUEST_COUNT_KEY  = "events:requests:grpc"
-local GRPCS_REQUEST_COUNT_KEY = "events:requests:grpcs"
-local WS_REQUEST_COUNT_KEY    = "events:requests:ws"
-local WSS_REQUEST_COUNT_KEY   = "events:requests:wss"
 
 local _buffer = {}
 local _ping_infos = {}
@@ -232,22 +226,8 @@ local function send_ping(host, port)
   _ping_infos.unique_id = _unique_str
 
   _ping_infos.requests   = get_counter(REQUEST_COUNT_KEY)
-  _ping_infos.http_reqs  = get_counter(HTTP_REQUEST_COUNT_KEY)
-  _ping_infos.https_reqs = get_counter(HTTPS_REQUEST_COUNT_KEY)
-  _ping_infos.grpc_reqs  = get_counter(GRPC_REQUEST_COUNT_KEY)
-  _ping_infos.grpcs_reqs = get_counter(GRPCS_REQUEST_COUNT_KEY)
-  _ping_infos.ws_reqs    = get_counter(WS_REQUEST_COUNT_KEY)
-  _ping_infos.wss_reqs   = get_counter(WSS_REQUEST_COUNT_KEY)
-
   send_report("ping", _ping_infos, host, port)
-
   reset_counter(REQUEST_COUNT_KEY,       _ping_infos.requests)
-  reset_counter(HTTP_REQUEST_COUNT_KEY,  _ping_infos.http_reqs)
-  reset_counter(HTTPS_REQUEST_COUNT_KEY, _ping_infos.https_reqs)
-  reset_counter(GRPC_REQUEST_COUNT_KEY,  _ping_infos.grpc_reqs)
-  reset_counter(GRPCS_REQUEST_COUNT_KEY, _ping_infos.grpcs_reqs)
-  reset_counter(WS_REQUEST_COUNT_KEY,    _ping_infos.ws_reqs)
-  reset_counter(WSS_REQUEST_COUNT_KEY,   _ping_infos.wss_reqs)
 end
 
 
@@ -370,11 +350,6 @@ return {
     end
 
     incr_counter(REQUEST_COUNT_KEY)
-    local suffix, err = get_current_request_suffix()
-    if suffix then
-      incr_counter(REQUEST_COUNT_KEY .. ":" .. suffix)
-    else
-      log(WARN, err)
     end
   end,
 
