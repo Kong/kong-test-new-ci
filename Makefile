@@ -17,13 +17,21 @@ endif
 .PHONY: install remove dependencies grpcurl dev \
 	lint test test-integration test-plugins test-all fix-windows
 
-KONG_GMP_VERSION ?= `grep KONG_GMP_VERSION .requirements | awk -F"=" '{print $$2}'`
-RESTY_VERSION ?= `grep RESTY_VERSION .requirements | awk -F"=" '{print $$2}'`
-RESTY_LUAROCKS_VERSION ?= `grep RESTY_LUAROCKS_VERSION .requirements | awk -F"=" '{print $$2}'`
-RESTY_OPENSSL_VERSION ?= `grep RESTY_OPENSSL_VERSION .requirements | awk -F"=" '{print $$2}'`
-RESTY_PCRE_VERSION ?= `grep RESTY_PCRE_VERSION .requirements | awk -F"=" '{print $$2}'`
-KONG_BUILD_TOOLS ?= '2.0.0'
+ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+KONG_GMP_VERSION ?= `grep KONG_GMP_VERSION $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
+RESTY_VERSION ?= `grep RESTY_VERSION $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
+RESTY_LUAROCKS_VERSION ?= `grep RESTY_LUAROCKS_VERSION $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
+RESTY_OPENSSL_VERSION ?= `grep RESTY_OPENSSL_VERSION $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
+RESTY_PCRE_VERSION ?= `grep RESTY_PCRE_VERSION $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
+KONG_BUILD_TOOLS ?= `grep KONG_BUILD_TOOLS $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
 KONG_VERSION ?= `cat kong-*.rockspec | grep tag | awk '{print $$3}' | sed 's/"//g'`
+KONG_SOURCE_LOCATION ?= $(ROOT_DIR)
+
+setup-ci:
+	LUAROCKS=$(RESTY_LUAROCKS_VERSION) \
+	OPENSSL=$(RESTY_OPENSSL_VERSION) \
+	OPENRESTY=$(RESTY_VERSION) \
+	.ci/setup_env.sh
 
 setup-kong-build-tools:
 	-rm -rf kong-build-tools; \
@@ -33,7 +41,6 @@ setup-kong-build-tools:
 
 functional-tests: setup-kong-build-tools
 	cd kong-build-tools; \
-	export KONG_SOURCE_LOCATION=`pwd`/../ && \
 	$(MAKE) setup-build && \
 	$(MAKE) build-kong && \
 	$(MAKE) test
@@ -41,15 +48,14 @@ functional-tests: setup-kong-build-tools
 nightly-release: setup-kong-build-tools
 	sed -i -e '/return string\.format/,/\"\")/c\return "$(KONG_VERSION)\"' kong/meta.lua && \
 	cd kong-build-tools; \
-	export KONG_SOURCE_LOCATION=`pwd`/../ && \
 	$(MAKE) setup-build && \
 	$(MAKE) build-kong && \
 	$(MAKE) release-kong
 
-release: setup-release
+release: setup-kong-build-tools
 	cd kong-build-tools; \
-	export KONG_SOURCE_LOCATION=`pwd`/../ && \
-	$(MAKE) package-kong && \
+	$(MAKE) setup-build && \
+	$(MAKE) build-kong && \
 	$(MAKE) release-kong
 
 install:

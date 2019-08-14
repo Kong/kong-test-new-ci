@@ -8,10 +8,10 @@
 DEPS_HASH=$(cat .ci/setup_env.sh .travis.yml | md5sum | awk '{ print $1 }')
 BUILD_TOOLS_DOWNLOAD=$DOWNLOAD_ROOT/openresty-build-tools
 
-mkdir -p $BUILD_TOOLS_DOWNLOAD
-
-wget -O $BUILD_TOOLS_DOWNLOAD/kong-ngx-build https://raw.githubusercontent.com/Kong/openresty-build-tools/master/kong-ngx-build
-chmod +x $BUILD_TOOLS_DOWNLOAD/kong-ngx-build
+git clone https://github.com/Kong/openresty-build-tools.git $DOWNLOAD_ROOT/openresty-build-tools
+pushd $DOWNLOAD_ROOT/openresty-build-tools
+git reset --hard ${OPENRESTY_BUILD_TOOLS:-master}
+popd
 
 export PATH=$BUILD_TOOLS_DOWNLOAD:$PATH
 
