@@ -28,42 +28,31 @@ KONG_NGINX_MODULE_BRANCH ?= `grep KONG_NGINX_MODULE_BRANCH $(ROOT_DIR)/.requirem
 OPENRESTY_PATCHES_BRANCH ?= `grep KONG_NGINX_MODULE_BRANCH $(ROOT_DIR)/.requirements | awk -F"=" '{print $$2}'`
 KONG_VERSION ?= `cat kong-*.rockspec | grep tag | awk '{print $$3}' | sed 's/"//g'`
 KONG_SOURCE_LOCATION ?= $(ROOT_DIR)
+KONG_BUILD_TOOLS_LOCATION ?= $(ROOT_DIR)/../kong-build-tools
 
-setup-ci:
-	DOWNLOAD_ROOT=$(DOWNLOAD_ROOT) \
-	OPENRESTY_BUILD_TOOLS_VERSION=$(OPENRESTY_BUILD_TOOLS_VERSION) \
-	BUILD_TOOLS_DOWNLOAD=$(BUILD_TOOLS_DOWNLOAD) \
-	INSTALL_CACHE=$(INSTALL_CACHE) \
-	INSTALL_ROOT=$(INSTALL_ROOT) \
-	RESTY_VERSION=$(RESTY_VERSION) \
-	OPENRESTY_PATCHES_BRANCH=$(OPENRESTY_PATCHES_BRANCH) \
-	KONG_NGINX_MODULE_BRANCH=$(KONG_NGINX_MODULE_BRANCH) \
-	RESTY_LUAROCKS_VERSION=$(RESTY_LUAROCKS_VERSION) \
-	RESTY_OPENSSL_VERSION=$(RESTY_OPENSSL_VERSION) \
-	JOBS=$(JOBS) \
-	.ci/setup_env.sh
+setup-ci: setup-kong-build-tools
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
+	make setup-ci
 
 setup-kong-build-tools:
 	-rm -rf kong-build-tools
-	git clone --single-branch --branch $(KONG_BUILD_TOOLS) https://github.com/Kong/kong-build-tools.git
+	git clone --single-branch --branch $(KONG_BUILD_TOOLS) https://github.com/Kong/kong-build-tools.git $(KONG_BUILD_TOOLS_LOCATION)
 
-functional-tests: setup-kong-build-tools
-	cd kong-build-tools; \
-	$(MAKE) setup-build && \
-	$(MAKE) build-kong && \
+build-release: setup-kong-build-tools
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) build-kong
+
+functional-tests: setup-kong-build-tools build-release
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
 	$(MAKE) test
 
-nightly-release: setup-kong-build-tools
+nightly-release: setup-kong-build-tools build-release
 	sed -i -e '/return string\.format/,/\"\")/c\return "$(KONG_VERSION)\"' kong/meta.lua && \
-	cd kong-build-tools; \
-	$(MAKE) setup-build && \
-	$(MAKE) build-kong && \
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
 	$(MAKE) release-kong
 
-release: setup-kong-build-tools
-	cd kong-build-tools; \
-	$(MAKE) setup-build && \
-	$(MAKE) build-kong && \
+release: setup-kong-build-tools build-release
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
 	$(MAKE) release-kong
 
 install:
