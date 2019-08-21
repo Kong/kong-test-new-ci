@@ -30,18 +30,17 @@ KONG_VERSION ?= `cat kong-*.rockspec | grep tag | awk '{print $$3}' | sed 's/"//
 KONG_SOURCE_LOCATION ?= $(ROOT_DIR)
 KONG_BUILD_TOOLS_LOCATION ?= $(ROOT_DIR)/../kong-build-tools
 
-setup-env:
+setup-env: setup-kong-build-tools
 	-@echo "$(DOCKER_PASSWORD)" | docker login -u "$(DOCKER_USERNAME)" --password-stdin
-	$(MAKE) build-release
-	sudo dpkg -i $(KONG_BUILD_TOOLS_LOCATION)/output/kong*.deb
-	sudo rm -rf $(KONG_BUILD_TOOLS_LOCATION)
+	cd $(KONG_BUILD_TOOLS_LOCATION); \
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) kong-prerequisites
 	sudo make dev
 	sudo chown -R $(USER):$(USER) $(ROOT_DIR)
 	.ci/setup_env.sh
 
 setup-ci: setup-kong-build-tools
 	cd $(KONG_BUILD_TOOLS_LOCATION); \
-	make setup-ci
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) setup-ci
 
 setup-kong-build-tools:
 	-rm -rf $(KONG_BUILD_TOOLS_LOCATION)
@@ -53,16 +52,16 @@ build-release: setup-kong-build-tools
 
 functional-tests: setup-kong-build-tools build-release
 	cd $(KONG_BUILD_TOOLS_LOCATION); \
-	$(MAKE) test
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) test
 
 nightly-release: setup-kong-build-tools build-release
 	sed -i -e '/return string\.format/,/\"\")/c\return "$(KONG_VERSION)\"' kong/meta.lua && \
 	cd $(KONG_BUILD_TOOLS_LOCATION); \
-	$(MAKE) release-kong
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) release-kong
 
 release: setup-kong-build-tools build-release
 	cd $(KONG_BUILD_TOOLS_LOCATION); \
-	$(MAKE) release-kong
+	KONG_SOURCE_LOCATION=$(KONG_SOURCE_LOCATION) $(MAKE) release-kong
 
 install:
 	@luarocks make OPENSSL_DIR=$(OPENSSL_DIR) CRYPTO_DIR=$(OPENSSL_DIR)
