@@ -39,6 +39,7 @@ env:
     - KONG_TEST_DATABASE=postgres TEST_SUITE=plugins
     - KONG_TEST_DATABASE=cassandra CASSANDRA=2.2 TEST_SUITE=plugins
     - KONG_TEST_DATABASE=cassandra CASSANDRA=3.9 TEST_SUITE=plugins
+    - TEST_SUITE=unit
     - TEST_SUITE=pdk
 
 stages:
@@ -66,11 +67,6 @@ jobs:
       script:
       - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
       - make build-release
-    - stage: lint and unit
-      script:
-      - luacheck -q .
-      - scripts/autodoc-admin-api
-      - bin/busted -v -o gtest spec/01-unit
       env:
         - KONG_DATABASE=none
     - stage: release

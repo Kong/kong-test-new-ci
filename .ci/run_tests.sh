@@ -3,6 +3,12 @@ set -e
 
 export BUSTED_ARGS="-o gtest -v --exclude-tags=flaky,ipv6"
 
+if [ "$TEST_SUITE" == "unit" ]; then
+    luacheck -q .
+    scripts/autodoc-admin-api
+    bin/busted -v -o gtest spec/01-unit
+    exit 0
+fi
 if [ "$KONG_TEST_DATABASE" == "postgres" ]; then
     export TEST_CMD="bin/busted $BUSTED_ARGS,cassandra,off"
 elif [ "$KONG_TEST_DATABASE" == "cassandra" ]; then
