@@ -31,12 +31,12 @@ KONG_SOURCE_LOCATION ?= $(ROOT_DIR)
 KONG_BUILD_TOOLS_LOCATION ?= $(ROOT_DIR)/../kong-build-tools
 
 setup-env:
-	-echo "$$DOCKER_PASSWORD" | docker login -u "$$DOCKER_USERNAME" --password-stdin
+	-@echo "$(DOCKER_PASSWORD)" | docker login -u "$(DOCKER_USERNAME)" --password-stdin
 	$(MAKE) build-release
-	sudo dpkg -i $$KONG_BUILD_TOOLS_LOCATION/output/kong*.deb
-	sudo rm -rf kong-build-tools
+	sudo dpkg -i $(KONG_BUILD_TOOLS_LOCATION)/output/kong*.deb
+	sudo rm -rf $(KONG_BUILD_TOOLS_LOCATION)
 	sudo make dev
-	sudo chown -R travis:travis $HOME
+	sudo chown -R $(USER):$(USER) $(ROOT_DIR)
 	.ci/setup_env.sh
 
 setup-ci: setup-kong-build-tools
@@ -44,7 +44,7 @@ setup-ci: setup-kong-build-tools
 	make setup-ci
 
 setup-kong-build-tools:
-	-rm -rf kong-build-tools
+	-rm -rf $(KONG_BUILD_TOOLS_LOCATION)
 	git clone --single-branch --branch $(KONG_BUILD_TOOLS) https://github.com/Kong/kong-build-tools.git $(KONG_BUILD_TOOLS_LOCATION)
 
 build-release: setup-kong-build-tools

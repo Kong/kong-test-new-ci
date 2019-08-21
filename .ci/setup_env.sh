@@ -6,7 +6,16 @@
 # -------------------------------------
 if [[ "$KONG_TEST_DATABASE" == "cassandra" ]]; then
   echo "Setting up Cassandra"
-  docker run -d --name=cassandra --rm -p 7199:7199 -p 7000:7000 -p 9160:9160 -p 9042:9042 cassandra:$CASSANDRA
+  docker run -d --name=cassandra --rm -p 7199:7199 -p 7000:7000 -p 9160:9160 -p 9042:9042 cassandra:${CASSANDRA:-3.9}
+  grep -q 'Created default superuser role' <(docker logs -f cassandra)
+fi
+
+# -------------------------------------
+# Postgres Database
+# -------------------------------------
+if [[ "$KONG_TEST_DATABASE" == "postgres" ]]; then
+  echo "Setting up Postgres"
+  docker run -d --name=postgres --rm -p 5432:5432 postgres:${POSTGRES:-9}
   grep -q 'Created default superuser role' <(docker logs -f cassandra)
 fi
 

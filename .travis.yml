@@ -31,6 +31,7 @@ env:
     - JOBS=2
     - DOCKER_MACHINE_ARM64_NAME=travis-ci-kong-${TRAVIS_JOB_ID}
     - KONG_BUILD_TOOLS_LOCATION=$HOME/kong-build-tools
+    - POSTGRES=9
   matrix:
     - KONG_TEST_DATABASE=postgres TEST_SUITE=integration
     - KONG_TEST_DATABASE=cassandra CASSANDRA=2.2 TEST_SUITE=integration
@@ -43,7 +44,6 @@ env:
     - TEST_SUITE=pdk
 
 stages:
-  - build release
   - lint and unit
   - test
   - Deploy daily build
@@ -55,13 +55,6 @@ install:
 
 jobs:
   include:
-    - stage: build release
-      install: skip
-      script:
-      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-      - make build-release
-      env:
-        - KONG_DATABASE=none
     - stage: release
       install: skip
       script:
