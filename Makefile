@@ -33,11 +33,10 @@ KONG_BUILD_TOOLS_LOCATION ?= $(ROOT_DIR)/../kong-build-tools
 setup-env:
 	-echo "$$DOCKER_PASSWORD" | docker login -u "$$DOCKER_USERNAME" --password-stdin
 	$(MAKE) build-release
-	sudo dpkg -i $KONG_BUILD_TOOLS_LOCATION/output/kong*.deb
+	sudo dpkg -i $$KONG_BUILD_TOOLS_LOCATION/output/kong*.deb
 	sudo rm -rf kong-build-tools
 	sudo make dev
 	sudo chown -R travis:travis $HOME
-	mkdir -p /home/travis/build/Kong/kong/servroot/logs/
 	.ci/setup_env.sh
 
 setup-ci: setup-kong-build-tools
