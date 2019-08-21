@@ -51,14 +51,7 @@ stages:
 
 install:
   - export PATH=$PATH:/usr/local/openresty/bin/:/usr/local/kong/bin/:/usr/local/openresty/nginx/sbin/
-  - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-  - make build-release
-  - sudo dpkg -i $KONG_BUILD_TOOLS_LOCATION/output/kong*.deb
-  - sudo rm -rf kong-build-tools
-  - sudo make dev
-  - sudo chown -R travis:travis $HOME
-  - mkdir -p /home/travis/build/Kong/kong/servroot/logs/
-  - source .ci/setup_env.sh
+  - make setup-env
 
 jobs:
   include:
