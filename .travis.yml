@@ -15,11 +15,6 @@ services:
 
 addons:
   postgresql: "9.5"
-  apt:
-    packages:
-      - net-tools
-      - libpcre3-dev
-      - build-essential
   hosts:
     - grpcs_1.test
     - grpcs_2.test
@@ -42,7 +37,6 @@ env:
     - TEST_SUITE=pdk
 
 stages:
-  - build release
   - lint and unit
   - test
   - Deploy daily build
@@ -61,11 +55,6 @@ install:
 
 jobs:
   include:
-    - stage: build release
-      install: skip
-      script:
-      - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-      - make build-release
     - stage: lint and unit
       script:
       - luacheck -q .
