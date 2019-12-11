@@ -514,9 +514,9 @@ describe("Configuration loader", function()
       assert.is_nil(conf)
 
       local conf, err = conf_loader(nil, {
-        router_consistency = "magical"
+        proxy_state_consistency = "magical"
       })
-      assert.equal("router_consistency has an invalid value: 'magical' (strict, eventual)", err)
+      assert.equal("proxy_state_consistency has an invalid value: 'magical' (strict, eventual)", err)
       assert.is_nil(conf)
 
       conf, err = conf_loader(nil, {
@@ -933,26 +933,26 @@ describe("Configuration loader", function()
     end)
   end)
 
-  describe("router_update_frequency option", function()
+  describe("proxy_state_update_frequency option", function()
     it("is rejected with a zero", function()
       local conf, err = conf_loader(nil, {
-        router_update_frequency = 0,
+        proxy_state_update_frequency = 0,
       })
       assert.is_nil(conf)
-      assert.equal("router_update_frequency must be greater than 0", err)
+      assert.equal("proxy_state_update_frequency must be greater than 0", err)
     end)
     it("is rejected with a negative number", function()
       local conf, err = conf_loader(nil, {
-        router_update_frequency = -1,
+        proxy_state_update_frequency = -1,
       })
       assert.is_nil(conf)
-      assert.equal("router_update_frequency must be greater than 0", err)
+      assert.equal("proxy_state_update_frequency must be greater than 0", err)
     end)
     it("accepts decimal numbers", function()
       local conf, err = conf_loader(nil, {
-        router_update_frequency = 0.01,
+        proxy_state_update_frequency = 0.01,
       })
-      assert.equal(conf.router_update_frequency, 0.01)
+      assert.equal(conf.proxy_state_update_frequency, 0.01)
       assert.is_nil(err)
     end)
   end)
