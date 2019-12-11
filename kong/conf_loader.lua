@@ -250,8 +250,32 @@ local CONF_INFERENCES = {
   dns_not_found_ttl = { typ = "number" },
   dns_error_ttl = { typ = "number" },
   dns_no_sync = { typ = "boolean" },
-  router_consistency = { enum = { "strict", "eventual" } },
-  router_update_frequency = { typ = "number" },
+  proxy_state_consistency = { enum = { "strict", "eventual" } },
+  router_consistency = {
+    enum = { "strict", "eventual" },
+    deprecated = {
+      replacement = "proxy_state_consistency",
+      alias = function(conf)
+        if conf.proxy_state_consistency == nil and
+           conf.router_consistency ~= nil then
+          conf.proxy_state_consistency = conf.router_consistency
+        end
+      end,
+    }
+  },
+  proxy_state_update_frequency = { typ = "number" },
+  router_update_frequency = {
+    typ = "number",
+    deprecated = {
+      replacement = "proxy_state_update_frequency",
+      alias = function(conf)
+        if conf.proxy_state_update_frequency == nil and
+           conf.router_update_frequency ~= nil then
+          conf.proxy_state_update_frequency = conf.router_update_frequency
+        end
+      end,
+    }
+  },
 
   client_ssl = { typ = "boolean" },
 
@@ -590,8 +614,8 @@ local function check_and_infer(conf)
     errors[#errors + 1] = "pg_semaphore_timeout must be an integer greater than 0"
   end
 
-  if conf.router_update_frequency <= 0 then
-    errors[#errors + 1] = "router_update_frequency must be greater than 0"
+  if conf.proxy_state_update_frequency <= 0 then
+    errors[#errors + 1] = "proxy_state_update_frequency must be greater than 0"
   end
 
   return #errors == 0, errors[1], errors
