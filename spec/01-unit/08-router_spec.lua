@@ -267,7 +267,7 @@ describe("Router", function()
     end)
   end)
 
-  describe("select()", function()
+  pending("select()", function()
     local router = assert(Router.new(use_case))
 
     it("[host]", function()
@@ -2898,7 +2898,7 @@ describe("Router", function()
   end)
 
 
-  describe("has_capturing_groups()", function()
+  pending("has_capturing_groups()", function()
     -- load the `assert.fail` assertion
     require "spec.helpers"
 
@@ -2938,7 +2938,7 @@ describe("Router", function()
   end)
 
 
-  describe("#stream context", function()
+  pending("#stream context", function()
     describe("[sources]", function()
       local use_case = {
         -- plain
@@ -3035,7 +3035,7 @@ describe("Router", function()
     end)
 
 
-    describe("[destinations]", function()
+    pending("[destinations]", function()
       local use_case = {
         -- plain
         {
