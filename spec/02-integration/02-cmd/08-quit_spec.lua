@@ -1,14 +1,14 @@
 local helpers = require "spec.helpers"
 
 describe("kong quit", function()
-  setup(function()
-    assert(helpers.dao:run_migrations())
+  lazy_setup(function()
+    helpers.get_db_utils(nil, {}) -- runs migrations
     helpers.prepare_prefix()
   end)
   after_each(function()
     helpers.kill_all()
   end)
-  teardown(function()
+  lazy_teardown(function()
     helpers.clean_prefix()
   end)
 
@@ -23,5 +23,14 @@ describe("kong quit", function()
   it("quit gracefully with --timeout option", function()
     assert(helpers.kong_exec("start --conf " .. helpers.test_conf_path))
     assert(helpers.kong_exec("quit --timeout 2 --prefix " .. helpers.test_conf.prefix))
+  end)
+  it("quit gracefully with --wait option", function()
+    assert(helpers.kong_exec("start --conf " .. helpers.test_conf_path))
+    ngx.update_time()
+    local start = ngx.now()
+    assert(helpers.kong_exec("quit --wait 2 --prefix " .. helpers.test_conf.prefix))
+    ngx.update_time()
+    local duration = ngx.now() - start
+    assert.is.near(2, duration, 0.5)
   end)
 end)

@@ -5,6 +5,11 @@ local ws_server  = require "resty.websocket.server"
 local pl_stringx = require "pl.stringx"
 
 
+local kong = {
+  table = require("kong.pdk.table").new()
+}
+
+
 local function parse_multipart_form_params(body, content_type)
   if not content_type then
     return nil, 'missing content-type'
@@ -231,7 +236,7 @@ end
 
 
 local function send_default_json_response(extra_fields, response_headers)
-  local tbl = utils.table_merge(get_default_json_response(), extra_fields)
+  local tbl = kong.table.merge(get_default_json_response(), extra_fields)
   return send_text_response(cjson.encode(tbl),
                             "application/json", response_headers)
 end
@@ -291,6 +296,86 @@ local function serve_web_sockets()
 end
 
 
+local function get_logger()
+  local logger = ngx.shared.kong_mock_upstream_loggers
+  if not logger then
+    error("missing 'kong_mock_upstream_loggers' shm declaration")
+  end
+
+  return logger
+end
+
+
+local function store_log(logname)
+  ngx.req.read_body()
+
+  local raw_entries = ngx.req.get_body_data()
+  local logger = get_logger()
+
+  local entries = cjson.decode(raw_entries)
+  if #entries == 0 then
+    -- backwards-compatibility for `conf.queue_size == 1`
+    entries = { entries }
+  end
+
+  local log_req_headers = ngx.req.get_headers()
+
+  for i = 1, #entries do
+    local store = {
+      entry = entries[i],
+      log_req_headers = log_req_headers,
+    }
+
+    assert(logger:rpush(logname, cjson.encode(store)))
+    assert(logger:incr(logname .. "|count", 1, 0))
+  end
+
+  ngx.status = 200
+end
+
+
+local function retrieve_log(logname)
+  local logger = get_logger()
+  local len = logger:llen(logname)
+  local entries = {}
+
+  for i = 1, len do
+    local encoded_stored = assert(logger:lpop(logname))
+    local stored = cjson.decode(encoded_stored)
+    entries[i] = stored.entry
+    entries[i].log_req_headers = stored.log_req_headers
+    assert(logger:rpush(logname, encoded_stored))
+  end
+
+  local count, err = logger:get(logname .. "|count")
+  if err then
+    error(err)
+  end
+
+  ngx.status = 200
+  ngx.say(cjson.encode({
+    entries = entries,
+    count = count,
+  }))
+end
+
+
+local function count_log(logname)
+  local logger = get_logger()
+  local count = assert(logger:get(logname .. "|count"))
+
+  ngx.status = 200
+  ngx.say(count)
+end
+
+
+local function reset_log(logname)
+  local logger = get_logger()
+  logger:delete(logname)
+  logger:delete(logname .. "|count")
+end
+
+
 return {
   get_default_json_response   = get_default_json_response,
   filter_access_by_method     = filter_access_by_method,
@@ -298,4 +383,8 @@ return {
   send_text_response          = send_text_response,
   send_default_json_response  = send_default_json_response,
   serve_web_sockets           = serve_web_sockets,
+  store_log                   = store_log,
+  retrieve_log                = retrieve_log,
+  count_log                   = count_log,
+  reset_log                   = reset_log,
 }

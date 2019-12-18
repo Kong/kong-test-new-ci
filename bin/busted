@@ -1,5 +1,7 @@
 #!/usr/bin/env resty
 
+setmetatable(_G, nil)
+
 local DEFAULT_RESTY_FLAGS="-c 4096"
 
 do

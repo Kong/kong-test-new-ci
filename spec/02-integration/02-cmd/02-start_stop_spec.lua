@@ -1,14 +1,21 @@
 local helpers = require "spec.helpers"
 
-describe("kong start/stop", function()
-  setup(function()
-    assert(helpers.dao:run_migrations())
+
+
+for _, strategy in helpers.each_strategy() do
+
+describe("kong start/stop #" .. strategy, function()
+  lazy_setup(function()
+    helpers.get_db_utils(nil, {
+      "routes",
+      "services",
+    }) -- runs migrations
     helpers.prepare_prefix()
   end)
   after_each(function()
     helpers.kill_all()
   end)
-  teardown(function()
+  lazy_teardown(function()
     helpers.clean_prefix()
   end)
 
@@ -35,10 +42,36 @@ describe("kong start/stop", function()
     assert(helpers.kong_exec("start --conf " .. helpers.test_conf_path))
     assert(helpers.kong_exec("stop --prefix " .. helpers.test_conf.prefix))
   end)
+  it("start/stop Kong with only stream listeners enabled", function()
+    assert(helpers.kong_exec("start ", {
+      prefix = helpers.test_conf.prefix,
+      admin_listen = "off",
+      proxy_listen = "off",
+      stream_listen = "127.0.0.1:9022",
+    }))
+    assert(helpers.kong_exec("stop", {
+      prefix = helpers.test_conf.prefix
+    }))
+  end)
   it("start dumps Kong config in prefix", function()
     assert(helpers.kong_exec("start --conf " .. helpers.test_conf_path))
     assert.truthy(helpers.path.exists(helpers.test_conf.kong_env))
   end)
+
+  if strategy == "cassandra" then
+    it("start resolves cassandra contact points", function()
+      assert(helpers.kong_exec("start", {
+        prefix = helpers.test_conf.prefix,
+        database = strategy,
+        cassandra_contact_points = "localhost",
+        cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
+      }))
+      assert(helpers.kong_exec("stop", {
+        prefix = helpers.test_conf.prefix,
+      }))
+    end)
+  end
+
   it("creates prefix directory if it doesn't exist", function()
     finally(function()
       helpers.kill_all("foobar")
@@ -47,7 +80,8 @@ describe("kong start/stop", function()
 
     assert.falsy(helpers.path.exists("foobar"))
     assert(helpers.kong_exec("start --prefix foobar", {
-      pg_database = helpers.test_conf.pg_database
+      pg_database = helpers.test_conf.pg_database,
+      cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
     }))
     assert.truthy(helpers.path.exists("foobar"))
   end)
@@ -100,16 +134,6 @@ describe("kong start/stop", function()
     end)
   end)
 
-  describe("using deprecated custom_plugin property" , function()
-    it("prints a warning to stderr", function()
-      local _, stderr, stdout = assert(helpers.kong_exec("start --conf " ..
-                                  "spec/fixtures/deprecated_custom_plugin.conf"))
-      assert.matches("Kong started", stdout, nil, true)
-      assert.matches("[warn] the 'custom_plugins' configuration property is " ..
-                     "deprecated, use 'plugins' instead", stderr, nil, true)
-    end)
-  end)
-
   describe("/etc/hosts resolving in CLI", function()
     it("resolves #cassandra hostname", function()
       assert(helpers.kong_exec("start --vv --run-migrations --conf " .. helpers.test_conf_path, {
@@ -125,7 +149,8 @@ describe("kong start/stop", function()
     end)
   end)
 
-  describe("--run-migrations", function()
+  -- TODO: update with new error messages and behavior
+  pending("--run-migrations", function()
     before_each(function()
       helpers.dao:drop_schema()
     end)
@@ -198,7 +223,7 @@ describe("kong start/stop", function()
           method = "GET",
           path = "/hello",
         })
-        assert.res_status(404, res) -- no API configured
+        assert.res_status(404, res) -- no Route configured
       end
 
       assert(helpers.stop_kong(helpers.test_conf.prefix))
@@ -210,6 +235,65 @@ describe("kong start/stop", function()
     end)
   end)
 
+  if strategy == "off" then
+    describe("declarative config start", function()
+      it("starts with a valid declarative config file", function()
+        local yaml_file = helpers.make_yaml_file [[
+          _format_version: "1.1"
+          services:
+          - name: my-service
+            url: http://127.0.0.1:15555
+            routes:
+            - name: example-route
+              hosts:
+              - example.test
+        ]]
+
+        local proxy_client
+
+        finally(function()
+          os.remove(yaml_file)
+          helpers.stop_kong(helpers.test_conf.prefix)
+          if proxy_client then
+            proxy_client:close()
+          end
+        end)
+
+        assert(helpers.start_kong({
+          database = "off",
+          declarative_config = yaml_file,
+          nginx_worker_processes = 100, -- stress test initialization
+          nginx_conf = "spec/fixtures/custom_nginx.template",
+        }))
+
+        helpers.wait_until(function()
+          -- get a connection, retry until kong starts
+          helpers.wait_until(function()
+            local pok
+            pok, proxy_client = pcall(helpers.proxy_client)
+            return pok
+          end, 10)
+
+          local res = assert(proxy_client:send {
+            method = "GET",
+            path = "/",
+            headers = {
+              host = "example.test",
+            }
+          })
+          local ok = res.status == 200
+
+          if proxy_client then
+            proxy_client:close()
+            proxy_client = nil
+          end
+
+          return ok
+        end, 10)
+      end)
+    end)
+  end
+
   describe("errors", function()
     it("start inexistent Kong conf file", function()
       local ok, stderr = helpers.kong_exec "start --conf foobar.conf"
@@ -219,7 +303,8 @@ describe("kong start/stop", function()
     end)
     it("stop inexistent prefix", function()
       assert(helpers.kong_exec("start --prefix " .. helpers.test_conf.prefix, {
-        pg_database = helpers.test_conf.pg_database
+        pg_database = helpers.test_conf.pg_database,
+        cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
       }))
 
       local ok, stderr = helpers.kong_exec("stop --prefix inexistent")
@@ -228,7 +313,8 @@ describe("kong start/stop", function()
     end)
     it("notifies when Kong is already running", function()
       assert(helpers.kong_exec("start --prefix " .. helpers.test_conf.prefix, {
-        pg_database = helpers.test_conf.pg_database
+        pg_database = helpers.test_conf.pg_database,
+        cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
       }))
 
       local ok, stderr = helpers.kong_exec("start --prefix " .. helpers.test_conf.prefix, {
@@ -241,7 +327,8 @@ describe("kong start/stop", function()
       local kill = require "kong.cmd.utils.kill"
 
       assert(helpers.kong_exec("start --prefix " .. helpers.test_conf.prefix, {
-        pg_database = helpers.test_conf.pg_database
+        pg_database = helpers.test_conf.pg_database,
+        cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
       }))
 
       local ok, stderr = helpers.kong_exec("start --prefix " .. helpers.test_conf.prefix, {
@@ -278,5 +365,112 @@ describe("kong start/stop", function()
           dict .. " [SIZE];' directive is defined.", err, nil, true)
       end
     end)
+    it("ensures lua-resty-core is loaded", function()
+        finally(function()
+          helpers.stop_kong()
+        end)
+
+        local ok, err = helpers.start_kong({
+          prefix = helpers.test_conf.prefix,
+          database = helpers.test_conf.database,
+          pg_database = helpers.test_conf.pg_database,
+          cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
+          nginx_http_lua_load_resty_core = "off",
+        })
+        assert.falsy(ok)
+        assert.matches(helpers.unindent([[
+          lua-resty-core must be loaded; make sure 'lua_load_resty_core'
+          is not disabled.
+        ]], nil, true), err, nil, true)
+    end)
+
+    if strategy == "cassandra" then
+      it("errors when cassandra contact points cannot be resolved", function()
+        local ok, stderr = helpers.start_kong({
+          database = strategy,
+          cassandra_contact_points = "invalid.inexistent.host",
+          cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
+        })
+
+        assert.False(ok)
+        assert.matches("could not resolve any of the provided Cassandra contact points " ..
+                       "(cassandra_contact_points = 'invalid.inexistent.host')", stderr, nil, true)
+
+        finally(function()
+          helpers.stop_kong()
+          helpers.kill_all()
+          pcall(helpers.dir.rmtree)
+        end)
+      end)
+    end
+
+    if strategy == "off" then
+      it("does not start with an invalid declarative config file", function()
+        local yaml_file = helpers.make_yaml_file [[
+          _format_version: "1.1"
+          services:
+          - name: "@gobo"
+            url: http://mockbin.org
+          - name: my-service
+            url: http://mockbin.org
+            routes:
+            - name: example-route
+              hosts:
+              - example.test
+              - \\99
+        ]]
+
+        finally(function()
+          os.remove(yaml_file)
+          helpers.stop_kong()
+        end)
+
+        local ok, err = helpers.start_kong({
+          database = "off",
+          declarative_config = yaml_file,
+        })
+        assert.falsy(ok)
+        assert.matches(helpers.unindent[[
+          in 'services':
+            - in entry 1 of 'services':
+              in 'name': invalid value '@gobo': it must only contain alphanumeric and '., -, _, ~' characters
+            - in entry 2 of 'services':
+              in 'routes':
+                - in entry 1 of 'routes':
+                  in 'hosts':
+                    - in entry 2 of 'hosts': invalid hostname: \\99
+        ]], err, nil, true)
+      end)
+    end
+
+  end)
+
+  describe("deprecated properties", function()
+    describe("prints a warning to stderr", function()
+      local u = helpers.unindent
+
+      it("'upstream_keepalive'", function()
+        local opts = {
+          prefix = helpers.test_conf.prefix,
+          database = helpers.test_conf.database,
+          pg_database = helpers.test_conf.pg_database,
+          cassandra_keyspace = helpers.test_conf.cassandra_keyspace,
+          upstream_keepalive = 0,
+        }
+
+        local _, stderr, stdout = assert(helpers.kong_exec("start", opts))
+        assert.matches("Kong started", stdout, nil, true)
+        assert.matches(u([[
+          [warn] the 'upstream_keepalive' configuration property is deprecated,
+          use 'nginx_http_upstream_keepalive' instead
+        ]], nil, true), stderr, nil, true)
+
+        local _, stderr, stdout = assert(helpers.kong_exec("stop", opts))
+        assert.matches("Kong stopped", stdout, nil, true)
+        assert.equal("", stderr)
+      end)
+    end)
   end)
 end)
+
+end
