@@ -2832,8 +2832,11 @@ describe("Router", function()
                   strip_path = test.strip_path,
                   --path_handling = test.path_handling,
                   -- only add the header is no path is provided
-                  hosts      = test.service_path == nil and nil or { "localbin-" .. i .. "-" .. j .. ".com" },
+                  --hosts      = test.service_path == nil and nil or { "localbin-" .. i .. "-" .. j .. ".com" },
                   paths      = { test.route_path },
+                },
+                headers    = {
+                  host = test.service_path == nil and nil or { "localbin-" .. i .. "-" .. j .. ".com" }
                 },
               }
             }
