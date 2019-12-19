@@ -13,15 +13,13 @@ local PATH_HANDLING_WHEN_MIGRATING_FROM = {
 
 
 local pg_path_handling_sql do
-  local v0_conds = {}
   local v1_conds = {}
   for migration, vx in pairs(PATH_HANDLING_WHEN_MIGRATING_FROM) do
-    local conds = vx == "v0" and v0_conds or v1_conds
-    conds[#conds + 1] = fmt("migrating_from = '%s'", migration)
+    if vx == "v1" then
+      table.insert(v1_conds, "migrating_from = '" .. migration .. "'")
+    end
   end
-  table.sort(v0_conds)
   table.sort(v1_conds)
-  v0_conds = table.concat(v0_conds, "\n        OR ")
   v1_conds = table.concat(v1_conds, "\n           OR ")
 
   pg_path_handling_sql = fmt([[
@@ -49,12 +47,9 @@ local pg_path_handling_sql do
 
         IF %s
         THEN
-          preset_path_handling := 'v0';
-        ELSIF %s
-        THEN
           preset_path_handling := 'v1';
         ELSE
-          RETURN;
+          preset_path_handling := 'v0';
         END IF;
 
       END IF;
@@ -66,7 +61,7 @@ local pg_path_handling_sql do
       UPDATE routes SET path_handling = preset_path_handling;
     END;
     $$;
-  ]], v0_conds, v1_conds)
+  ]], v1_conds)
 end
 
 
@@ -96,6 +91,8 @@ return {
 
   cassandra = {
     up = function(connector)
+      local coordinator = assert(connector:connect_migrations())
+
       local cql = "ALTER TABLE routes ADD path_handling text";
       local res, err = connector:query(cql);
       if not res then
@@ -143,16 +140,19 @@ return {
           cassandra.text(preset_path_handling)
         }))
 
-        local rows = assert(connector:query([[
-          SELECT id FROM routes;
-        ]]))
-        for i = 1, #rows do
-          assert(connector:query(
-            "UPDATE routes SET path_handling = ? WHERE id = ?",
-            { cassandra.text(preset_path_handling),
-              cassandra.text(rows[i].id)
-            }
-          ))
+        for rows, err in coordinator:iterate([[
+          SELECT * FROM routes;
+        ]]) do
+          if err then
+            return nil, err
+          end
+
+          for i = 1, #rows do
+            assert(connector:query(
+              fmt("UPDATE routes SET path_handling = '%s' WHERE partition = 'routes' AND id = %s",
+                preset_path_handling, rows[i].id)
+              ))
+          end
         end
       end
     end,
