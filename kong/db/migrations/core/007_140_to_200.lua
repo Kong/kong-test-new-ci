@@ -140,6 +140,13 @@ return {
           cassandra.text(preset_path_handling)
         }))
 
+
+
+
+
+
+
+
         for rows, err in coordinator:iterate([[
           SELECT * FROM routes;
         ]]) do
@@ -148,10 +155,9 @@ return {
           end
 
           for i = 1, #rows do
-            assert(connector:query(
-              fmt("UPDATE routes SET path_handling = '%s' WHERE partition = 'routes' AND id = %s",
-                preset_path_handling, rows[i].id)
-              ))
+            local cql = fmt("UPDATE routes SET path_handling = '%s' WHERE partition = 'routes' AND id = %s;", preset_path_handling, rows[i].id)
+            ngx.log(ngx.INFO, cql)
+            assert(connector:query(cql))
           end
         end
       end
