@@ -283,6 +283,9 @@ local CONF_INFERENCES = {
   cluster_control_plane = { typ = "string", },
   cluster_cert = { typ = "string" },
   cluster_cert_key = { typ = "string" },
+  cluster_mtls = { enum = { "shared", "pki" } },
+  cluster_ca_cert = { typ = "string" },
+  cluster_server_name = { typ = "string" },
 }
 
 
@@ -568,6 +571,10 @@ local function check_and_infer(conf)
   if conf.role == "control_plane" then
     if #conf.admin_listen < 1 or pl_stringx.strip(conf.admin_listen[1]) == "off" then
       errors[#errors + 1] = "admin_listen must be specified when role = \"control_plane\""
+    end
+
+    if conf.cluster_mtls == "pki" and not conf.cluster_ca_cert then
+      errors[#errors + 1] = "cluster_ca_cert must be specified when cluster_mtls = \"pki\""
     end
 
     if #conf.cluster_listen < 1 or pl_stringx.strip(conf.cluster_listen[1]) == "off" then
@@ -1178,6 +1185,10 @@ local function load(path, custom_conf, opts)
   if conf.cluster_cert and conf.cluster_cert_key then
     conf.cluster_cert = pl_path.abspath(conf.cluster_cert)
     conf.cluster_cert_key = pl_path.abspath(conf.cluster_cert_key)
+  end
+
+  if conf.cluster_ca_cert then
+    conf.cluster_ca_cert = pl_path.abspath(conf.cluster_ca_cert)
   end
 
   -- attach prefix files paths
