@@ -2963,8 +2963,8 @@ describe("Router", function()
             route_uri_or_host = "host localbin-" .. i .. "-" .. j .. ".com"
           end
 
-          local description = string.format("(%d-%d) plain, %s with %s, strip = %s, %s. req: %s",
-            i, j, test.service_path, route_uri_or_host, strip, test.path_handling, test.request_path)
+          local description = string.format("(%d-%d) plain, %s with %s, strip = %s. req: %s",
+            i, j, test.service_path, route_uri_or_host, strip, test.request_path)
 
           it(description, function()
             local use_case_routes = {
@@ -2976,7 +2976,6 @@ describe("Router", function()
                 },
                 route        = {
                   strip_path = test.strip_path,
-                  path_handling = test.path_handling,
                   -- only add the header is no path is provided
                   hosts      = test.service_path == nil and nil or { "localbin-" .. i .. "-" .. j .. ".com" },
                   paths      = { test.route_path },
@@ -3003,8 +3002,8 @@ describe("Router", function()
           for j, test in ipairs(line:expand()) do
             local strip = test.strip_path and "on" or "off"
             local regex = "/[0]?" .. test.route_path:sub(2, -1)
-            local description = string.format("(%d-%d) regex, %s with %s, strip = %s, %s. req: %s",
-              i, j, test.service_path, regex, strip, test.path_handling, test.request_path)
+            local description = string.format("(%d-%d) regex, %s with %s, strip = %s. req: %s",
+              i, j, test.service_path, regex, strip, test.request_path)
 
             it(description, function()
               local use_case_routes = {
@@ -3017,7 +3016,6 @@ describe("Router", function()
                   route        = {
                     strip_path = test.strip_path,
                     -- only add the header is no path is provided
-                    path_handling = test.path_handling,
                     hosts      = { "localbin-" .. i .. ".com" },
                     paths      = { regex },
                   },

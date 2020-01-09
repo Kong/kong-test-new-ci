@@ -1575,7 +1575,6 @@ for _, strategy in helpers.each_strategy() do
             for j, test in ipairs(line:expand()) do
               routes[#routes + 1] = {
                 strip_path   = test.strip_path,
-                path_handling = test.path_handling,
                 paths        = test.route_path and { test.route_path } or nil,
                 hosts        = { "localbin-" .. i .. "-" .. j .. ".com" },
                 service = {
@@ -1605,8 +1604,8 @@ for _, strategy in helpers.each_strategy() do
               route_uri_or_host = "host localbin-" .. i .. "-" .. j .. ".com"
             end
 
-            local description = string.format("(%d-%d) %s with %s, strip = %s, %s when requesting %s",
-              i, j, test.service_path, route_uri_or_host, strip, test.path_handling, test.request_path)
+            local description = string.format("(%d-%d) %s with %s, strip = %s, when requesting %s",
+              i, j, test.service_path, route_uri_or_host, strip, test.request_path)
 
             it(description, function()
               local res = assert(proxy_client:get(test.request_path, {
@@ -1638,7 +1637,6 @@ for _, strategy in helpers.each_strategy() do
                 routes[#routes + 1] = {
                   strip_path   = test.strip_path,
                   paths        = test.route_path and { make_a_regex(test.route_path) } or nil,
-                  path_handling = test.path_handling,
                   hosts        = { "localbin-" .. i .. "-" .. j .. ".com" },
                   service = {
                     name = "make_regex_" .. i .. "-" .. j,
@@ -1661,8 +1659,8 @@ for _, strategy in helpers.each_strategy() do
             for j, test in ipairs(line:expand()) do
               local strip = test.strip_path and "on" or "off"
 
-              local description = string.format("(%d-%d) %s with uri %s, strip = %s, %s when requesting %s",
-                i, j, test.service_path, make_a_regex(test.route_path), strip, test.path_handling, test.request_path)
+              local description = string.format("(%d-%d) %s with uri %s, strip = %s when requesting %s",
+                i, j, test.service_path, make_a_regex(test.route_path), strip, test.request_path)
 
               it(description, function()
                 local res = assert(proxy_client:get(test.request_path, {
