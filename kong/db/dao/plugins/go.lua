@@ -182,40 +182,6 @@ do
 end
 
 
--- global method search and cache
-local function index_table(table, field)
-  local res = table
-  for segment, e in ngx.re.gmatch(field, "\\w+", "o") do
-    if res[segment[0]] then
-      res = res[segment[0]]
-    else
-      return nil
-    end
-  end
-  return res
-end
-
-
-local get_field
-do
-  local exposed_api = {
-    kong = kong,
-  }
-
-  local method_cache = {}
-
-  function get_field(method)
-    if method_cache[method] then
-      return method_cache[method]
-
-    else
-      method_cache[method] = index_table(exposed_api, method)
-      return method_cache[method]
-    end
-  end
-end
-
-
 local function fix_mmap(t)
   local o, empty = {}, true
 
@@ -240,53 +206,87 @@ local function fix_mmap(t)
 end
 
 
-local function call_pdk_method(cmd, args)
-  local res, err
-
-  if cmd == "kong.log.serialize" then
-    res = cjson_encode(preloaded_stuff.basic_serializer or basic_serializer.serialize(ngx))
-
-  -- ngx API
-  elseif cmd == "kong.nginx.get_var" then
-    res = ngx.var[args[1]]
-
-  elseif cmd == "kong.nginx.get_tls1_version_str" then
-    res = ngx_ssl.get_tls1_version_str()
-
-  elseif cmd == "kong.nginx.get_ctx" then
-    res = ngx.ctx[args[1]]
-
-  elseif cmd == "kong.nginx.req_start_time" then
-    res = ngx.req.start_time()
-
-  elseif cmd == "kong.request.get_query" then
-    res = fix_mmap(kong.request.get_query(args and args[1]))
-
-  elseif cmd == "kong.request.get_headers" then
-    res = fix_mmap(kong.request.get_headers(args and args[1]))
-
-  elseif cmd == "kong.response.get_headers" then
-    res = fix_mmap(kong.response.get_headers(args and args[1]))
-
-  elseif cmd == "kong.service.response.get_headers" then
-    res = fix_mmap(kong.service.response.get_headers(args and args[1]))
-
-  -- PDK
-  else
-    local method = get_field(cmd)
-    if not method then
-      kong.log.err("could not find pdk method: ", cmd)
-      return
-    end
-
-    if type(args) == "table" then
-      res, err = method(unpack(args))
-    else
-      res, err = method(args)
-    end
+-- global method search and cache
+local function index_table(table, field)
+  if table[field] then
+    return table[field]
   end
 
-  return res, err
+  local res = table
+  for segment, e in ngx.re.gmatch(field, "\\w+", "o") do
+    if res[segment[0]] then
+      res = res[segment[0]]
+    else
+      return nil
+    end
+  end
+  return res
+end
+
+
+local get_field
+do
+  local exposed_api = {
+    kong = kong,
+    ["kong.log.serialize"] = function()
+      return cjson_encode(preloaded_stuff.basic_serializer or basic_serializer.serialize(ngx))
+    end,
+
+    ["kong.nginx.get_var"] = function(v)
+      return ngx.var[v]
+    end,
+
+    ["kong.nginx.get_tls1_version_str"] = ngx_ssl.get_tls1_version_str,
+
+    ["kong.nginx.get_ctx"] = function(v)
+      return ngx.ctx[v]
+    end,
+
+    ["kong.nginx.req_start_time"] = ngx.req.start_time,
+
+    ["kong.request.get_query"] = function(max)
+      return fix_mmap(kong.request.get_query(max))
+    end,
+
+    ["kong.request.get_headers"] = function(max)
+      return fix_mmap(kong.request.get_headers(max))
+    end,
+
+    ["kong.response.get_headers"] = function(max)
+      return fix_mmap(kong.response.get_headers(max))
+    end,
+
+    ["kong.service.response.get_headers"] = function(max)
+      return fix_mmap(kong.service.response.get_headers(max))
+    end,
+  }
+
+  local method_cache = {}
+
+  function get_field(method)
+    if method_cache[method] then
+      return method_cache[method]
+
+    else
+      method_cache[method] = index_table(exposed_api, method)
+      return method_cache[method]
+    end
+  end
+end
+
+
+local function call_pdk_method(cmd, args)
+  local method = get_field(cmd)
+  if not method then
+    kong.log.err("could not find pdk method: ", cmd)
+    return
+  end
+
+  if type(args) == "table" then
+    return method(unpack(args))
+  end
+
+  return method(args)
 end
 
 
