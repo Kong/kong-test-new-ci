@@ -262,6 +262,15 @@ local function call_pdk_method(cmd, args)
   elseif cmd == "kong.request.get_query" then
     res = fix_mmap(kong.request.get_query(args and args[1]))
 
+  elseif cmd == "kong.request.get_headers" then
+    res = fix_mmap(kong.request.get_headers(args and args[1]))
+
+  elseif cmd == "kong.response.get_headers" then
+    res = fix_mmap(kong.response.get_headers(args and args[1]))
+
+  elseif cmd == "kong.service.response.get_headers" then
+    res = fix_mmap(kong.service.response.get_headers(args and args[1]))
+
   -- PDK
   else
     local method = get_field(cmd)
@@ -293,6 +302,9 @@ do
     ["kong.router.get_route"] = "plugin.StepRoute",
     ["kong.router.get_service"] = "plugin.StepService",
     ["kong.request.get_query"] = "plugin.StepMultiMap",
+    ["kong.request.get_headers"] = "plugin.StepMultiMap",
+    ["kong.response.get_headers"] = "plugin.StepMultiMap",
+    ["kong.service.response.get_headers"] = "plugin.StepMultiMap",
   }
 
   function get_step_method(step_in, pdk_res, pdk_err)
