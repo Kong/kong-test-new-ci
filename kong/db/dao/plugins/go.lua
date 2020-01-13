@@ -20,6 +20,21 @@ local reset_instances   -- forward declaration
 local preloaded_stuff = {}
 
 
+-- add MessagePack empty array/map
+
+msgpack.packers['function'] = function (buffer, f)
+  f(buffer)
+end
+
+local function mp_empty_array(buffer)
+  msgpack.packers['array'](buffer, {}, 0)
+end
+
+local function mp_empty_map(buffer)
+  msgpack.packers['map'](buffer, {}, 0)
+end
+
+
 --- is_on(): returns true if Go plugins is enabled
 function go.is_on()
   return kong.configuration.go_plugins_dir ~= "off"
@@ -201,6 +216,30 @@ do
 end
 
 
+local function fix_mmap(t)
+  local o, empty = {}, true
+
+  for k, v in pairs(t) do
+    empty = false
+    if v == true then
+      o[k] = mp_empty_array
+
+    elseif type(v) == "string" then
+      o[k] = { v }
+
+    else
+      o[k] = v
+    end
+  end
+
+  if empty then
+    return mp_empty_map
+  end
+
+  return o
+end
+
+
 local function call_pdk_method(cmd, args)
   local res, err
 
@@ -219,6 +258,9 @@ local function call_pdk_method(cmd, args)
 
   elseif cmd == "kong.nginx.req_start_time" then
     res = ngx.req.start_time()
+
+  elseif cmd == "kong.request.get_query" then
+    res = fix_mmap(kong.request.get_query(args and args[1]))
 
   -- PDK
   else
@@ -250,6 +292,7 @@ do
     ["kong.node.get_memory_stats"] = "plugin.StepMemoryStats",
     ["kong.router.get_route"] = "plugin.StepRoute",
     ["kong.router.get_service"] = "plugin.StepService",
+    ["kong.request.get_query"] = "plugin.StepMultiMap",
   }
 
   function get_step_method(step_in, pdk_res, pdk_err)
