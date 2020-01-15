@@ -121,8 +121,12 @@ local function add_top_level_entities(fields, entities)
 end
 
 
-local function copy_without_foreign(record)
+local function copy_without_foreign(record, include_foreign)
   local copy = utils.deep_copy(record, false)
+  if include_foreign then
+    return copy
+  end
+
   for i = #copy.fields, 1, -1 do
     local f = copy.fields[i]
     local _, fdata = next(f)
@@ -144,10 +148,10 @@ end
 -- (e.g. `service` as a string key in the `routes` entry).
 -- @tparam map<string,table> records A map of top-level record definitions,
 -- indexable by entity name. These records are modified in-place.
-local function nest_foreign_relationships(records)
+local function nest_foreign_relationships(records, include_foreign)
   for entity, record in pairs(records) do
     for _, f in ipairs(record.fields) do
-      local fname, fdata = next(f)
+      local _, fdata = next(f)
       if fdata.type == "foreign" then
         local ref = fdata.reference
         -- allow nested entities
@@ -155,7 +159,7 @@ local function nest_foreign_relationships(records)
         table.insert(records[ref].fields, {
           [entity] = {
             type = "array",
-            elements = copy_without_foreign(record, fname),
+            elements = copy_without_foreign(record, include_foreign),
           },
         })
       end
@@ -187,7 +191,7 @@ local function reference_foreign_by_name(records)
 end
 
 
-local function build_fields(entities)
+local function build_fields(entities, include_foreign)
   local fields = {
     { _format_version = { type = "string", required = true, eq = "1.1" } },
   }
@@ -197,7 +201,7 @@ local function build_fields(entities)
   })
 
   local records = add_top_level_entities(fields, entities)
-  nest_foreign_relationships(records)
+  nest_foreign_relationships(records, include_foreign)
 
   return fields, records
 end
@@ -269,19 +273,23 @@ local function populate_references(input, known_entities, by_id, by_key, expecte
       populate_references(item, known_entities, by_id, by_key, expected, entity)
 
       local item_id = DeclarativeConfig.pk_string(entity_schema, item)
-      by_id[entity] = by_id[entity] or {}
-      by_id[entity][item_id] = item
+      if by_id then
+        by_id[entity] = by_id[entity] or {}
+        by_id[entity][item_id] = item
+      end
 
       local key
-      if entity_schema.endpoint_key then
-        key = item[entity_schema.endpoint_key]
-        if key then
-          by_key[entity] = by_key[entity] or {}
-          by_key[entity][key] = item
+      if by_key then
+        if entity_schema.endpoint_key then
+          key = item[entity_schema.endpoint_key]
+          if key then
+            by_key[entity] = by_key[entity] or {}
+            by_key[entity][key] = item
+          end
         end
       end
 
-      if foreign_refs then
+      if foreign_refs and expected then
         for k, v in pairs(item) do
           local ref = foreign_refs[k]
           if ref and v ~= null then
@@ -485,38 +493,25 @@ end
 local function flatten(self, input)
   local output = {}
 
-    -- This may give invalid errors as it validates input that does not have
-  -- foreign keys filled (e.g. basicauth_credentials fail on this with this
-  -- config:
-  --
-  --   consumers:
-  --     username: consumer
-  --     basicauth_credentials:
-  --     - username: username
-  --       password: password
-  --
-  -- because it tries to validate the credential that has no consumer.id at
-  -- this point filled in, and transformation implicitly adds mutually_required
-  -- check on that entity.
-  --
-  -- As a short-term solution, we don't error right away here.
   local ok, err = self:validate(input)
+  if not ok then
+    local input_copy = utils.deep_copy(input, false)
+    generate_ids(input_copy, self.known_entities)
+    populate_references(input_copy, self.known_entities)
+    local schema = DeclarativeConfig.load(self.plugin_set, true)
+    if not schema:validate(input_copy) then
+      return nil, err
+    end
+  end
 
   generate_ids(input, self.known_entities)
 
   local processed = self:process_auto_fields(input, "insert")
 
-  local by_id, by_key_or_err = validate_references(self, processed)
+  local by_id, by_key = validate_references(self, processed)
   if not by_id then
-    -- let's return original error in case it is defined, as the reference
-    -- validation could have failed because of that.
-    if not ok then
-      return nil, err
-    end
-
-    return nil, by_key_or_err
+    return nil, by_key
   end
-  local by_key = by_key_or_err
 
   for entity, entries in pairs(by_id) do
     local schema = all_schemas[entity]
@@ -533,44 +528,6 @@ local function flatten(self, input)
         else
           flat_entry[name] = entry[name]
         end
-      end
-
-      -- TODO: is the plugin not enabled a sign of something wrong somewhere?
-      local ok2, err2 = schema:validate(flat_entry)
-      if not ok2
-         and err2
-         and err2.name ~= string.format("plugin '%s' not enabled; add it to " ..
-                                        "the 'plugins' configuration property",
-                                        flat_entry.name)
-        then
-
-        if err then
-          if err2["@entity"] then
-            for _, errmsg2 in ipairs(err2["@entity"]) do
-              local found
-              if err["@entity"] then
-                for _, errmsg in ipairs(err["@entity"]) do
-                  if errmsg2 == errmsg then
-                    found = true
-                    break
-                  end
-                end
-              end
-
-              if not found then
-                if not err["@entity"] then
-                  err["@entity"] = {}
-                end
-
-                table.insert(err["@entity"], errmsg2)
-              end
-            end
-          end
-
-          return nil, err
-        end
-
-        return nil, err2
       end
 
       output[entity][id] = flat_entry
@@ -596,7 +553,7 @@ local function load_entity_subschemas(entity_name, entity)
 end
 
 
-function DeclarativeConfig.load(plugin_set)
+function DeclarativeConfig.load(plugin_set, include_foreign)
   if not core_entities then
     -- a copy of constants.CORE_ENTITIES without "tags"
     core_entities = {}
@@ -633,7 +590,7 @@ function DeclarativeConfig.load(plugin_set)
     end
   end
 
-  local fields, records = build_fields(known_entities)
+  local fields, records = build_fields(known_entities, include_foreign)
   -- assert(no_foreign(fields))
 
   local ok, err = load_plugin_subschemas(fields, plugin_set)
@@ -656,6 +613,7 @@ function DeclarativeConfig.load(plugin_set)
 
   schema.known_entities = known_entities
   schema.flatten = flatten
+  schema.plugin_set = plugin_set
 
   return schema, nil, def
 end
