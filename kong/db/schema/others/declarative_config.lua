@@ -121,7 +121,7 @@ local function add_top_level_entities(fields, entities)
 end
 
 
-local function copy_without_foreign(record, include_foreign)
+local function copy_record(record, include_foreign)
   local copy = utils.deep_copy(record, false)
   if include_foreign then
     return copy
@@ -159,7 +159,7 @@ local function nest_foreign_relationships(records, include_foreign)
         table.insert(records[ref].fields, {
           [entity] = {
             type = "array",
-            elements = copy_without_foreign(record, include_foreign),
+            elements = copy_record(record, include_foreign),
           },
         })
       end
@@ -273,23 +273,19 @@ local function populate_references(input, known_entities, by_id, by_key, expecte
       populate_references(item, known_entities, by_id, by_key, expected, entity)
 
       local item_id = DeclarativeConfig.pk_string(entity_schema, item)
-      if by_id then
-        by_id[entity] = by_id[entity] or {}
-        by_id[entity][item_id] = item
-      end
+      by_id[entity] = by_id[entity] or {}
+      by_id[entity][item_id] = item
 
       local key
-      if by_key then
-        if entity_schema.endpoint_key then
-          key = item[entity_schema.endpoint_key]
-          if key then
-            by_key[entity] = by_key[entity] or {}
-            by_key[entity][key] = item
-          end
+      if entity_schema.endpoint_key then
+        key = item[entity_schema.endpoint_key]
+        if key then
+          by_key[entity] = by_key[entity] or {}
+          by_key[entity][key] = item
         end
       end
 
-      if foreign_refs and expected then
+      if foreign_refs then
         for k, v in pairs(item) do
           local ref = foreign_refs[k]
           if ref and v ~= null then
@@ -490,14 +486,52 @@ local function generate_ids(input, known_entities, parent_entity)
 end
 
 
+local function polulate_foreigns(input, known_entities, parent_entity)
+  for _, entity in ipairs(known_entities) do
+    if type(input[entity]) ~= "table" then
+      goto continue
+    end
+
+    local parent_fk
+    local child_key
+    if parent_entity then
+      local parent_schema = all_schemas[parent_entity]
+      if parent_schema.fields[entity] then
+        goto continue
+      end
+      parent_fk = parent_schema:extract_pk_values(input)
+      child_key = foreign_children[parent_entity][entity]
+    end
+
+    local schema = all_schemas[entity]
+    for _, item in ipairs(input[entity]) do
+      local pk_name, key = get_key_for_uuid_gen(entity, item, schema,
+                                                parent_fk, child_key)
+      if key and not item[pk_name] then
+        item[pk_name] = generate_uuid(schema.name, key)
+      end
+
+      polulate_foreigns(item, known_entities, entity)
+      if parent_fk and not item[child_key] then
+        item[child_key] = utils.deep_copy(parent_fk, false)
+      end
+    end
+
+    ::continue::
+  end
+end
+
+
 local function flatten(self, input)
   local output = {}
 
   local ok, err = self:validate(input)
   if not ok then
+    -- the error may be due entity validation that depends on foreign entity,
+    -- and that is the reason why we try to validate the input again with the
+    -- filled foreign keys
     local input_copy = utils.deep_copy(input, false)
-    generate_ids(input_copy, self.known_entities)
-    populate_references(input_copy, self.known_entities)
+    polulate_foreigns(input_copy, self.known_entities)
     local schema = DeclarativeConfig.load(self.plugin_set, true)
     if not schema:validate(input_copy) then
       return nil, err
