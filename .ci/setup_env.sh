@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# set -e
+set +e
 
 dep_version() {
     grep $1 .requirements | sed -e 's/.*=//' | tr -d '\n'
@@ -9,20 +9,23 @@ OPENRESTY=$(dep_version RESTY_VERSION)
 LUAROCKS=$(dep_version RESTY_LUAROCKS_VERSION)
 OPENSSL=$(dep_version RESTY_OPENSSL_VERSION)
 GO_PLUGINSERVER=$(dep_version KONG_GO_PLUGINSERVER_VERSION)
+CIRCLE_WORKING_DIRECTORY=$HOME/project
 
 
 #---------
 # Download
 #---------
 
-DEPS_HASH=$(cat .ci/setup_env.sh .travis.yml .requirements | md5sum | awk '{ print $1 }')
-DOWNLOAD_ROOT=${DOWNLOAD_ROOT:=/download-root}
+mkdir -p $HOME/download-root $HOME/install-cache
+
+DOWNLOAD_ROOT=$HOME/download-root
 BUILD_TOOLS_DOWNLOAD=$DOWNLOAD_ROOT/kong-build-tools
 GO_PLUGINSERVER_DOWNLOAD=$DOWNLOAD_ROOT/go-pluginserver
+GRPCBIN_DOWNLOAD=$DOWNLOAD_ROOT/grpcbin
 
 KONG_NGINX_MODULE_BRANCH=${KONG_NGINX_MODULE_BRANCH:=master}
 
-if [ $TRAVIS_BRANCH == "master" ] || [ ! -z "$TRAVIS_TAG" ]; then
+if [ $CIRCLE_BRANCH == "master" ] || [ ! -z "$CIRCLE_TAG" ]; then
   KONG_BUILD_TOOLS_BRANCH=${KONG_BUILD_TOOLS_BRANCH:=master}
 else
   KONG_BUILD_TOOLS_BRANCH=${KONG_BUILD_TOOLS_BRANCH:=next}
@@ -39,29 +42,24 @@ fi
 
 export PATH=$BUILD_TOOLS_DOWNLOAD/openresty-build-tools:$PATH
 
-if [ ! -d $GO_PLUGINSERVER_DOWNLOAD ]; then
-  git clone -q https://github.com/Kong/go-pluginserver $GO_PLUGINSERVER_DOWNLOAD
-else
-  pushd $GO_PLUGINSERVER_DOWNLOAD
-    git fetch
-    git checkout $GO_PLUGINSERVER
-    git reset --hard origin/$GO_PLUGINSERVER
-  popd
-fi
-
-pushd $GO_PLUGINSERVER_DOWNLOAD
-  go get ./...
-  make
-popd
-
-export GO_PLUGINSERVER_DOWNLOAD
-export PATH=$GO_PLUGINSERVER_DOWNLOAD:$PATH
+git clone -q https://github.com/Kong/go-pluginserver $GO_PLUGINSERVER_DOWNLOAD
+git clone -q https://github.com/moul/grpcbin.git $GRPCBIN_DOWNLOAD
 
 #--------
 # Install
 #--------
-INSTALL_CACHE=${INSTALL_CACHE:=/install-cache}
-INSTALL_ROOT=$INSTALL_CACHE/$DEPS_HASH
+INSTALL_CACHE=$HOME/install-cache
+INSTALL_ROOT=$INSTALL_CACHE
+
+# -------------------------------------
+# Install Go plugin server and Go PDK
+# -------------------------------------
+pushd $GO_PLUGINSERVER_DOWNLOAD
+  go get ./...
+  make
+  mkdir $INSTALL_ROOT/go-pluginserver
+  cp $GO_PLUGINSERVER_DOWNLOAD/go-pluginserver $INSTALL_ROOT/go-pluginserver
+popd
 
 kong-ngx-build \
     --work $DOWNLOAD_ROOT \
@@ -69,8 +67,7 @@ kong-ngx-build \
     --openresty $OPENRESTY \
     --kong-nginx-module $KONG_NGINX_MODULE_BRANCH \
     --luarocks $LUAROCKS \
-    --openssl $OPENSSL \
-    -j $JOBS
+    --openssl $OPENSSL
 
 OPENSSL_INSTALL=$INSTALL_ROOT/openssl
 OPENRESTY_INSTALL=$INSTALL_ROOT/openresty
@@ -104,14 +101,7 @@ if [[ "$TEST_SUITE" == "pdk" ]]; then
 
   echo "Installing CPAN dependencies..."
   cpanm --notest Test::Nginx &> build.log || (cat build.log && exit 1)
-  cpanm --notest --local-lib=$TRAVIS_BUILD_DIR/perl5 local::lib && eval $(perl -I $TRAVIS_BUILD_DIR/perl5/lib/perl5/ -Mlocal::lib)
-fi
-
-# ----------------
-# Run gRPC server |
-# ----------------
-if [[ "$TEST_SUITE" =~ integration|dbless|plugins ]]; then
-  docker run -d --name grpcbin -p 15002:9000 -p 15003:9001 moul/grpcbin
+  cpanm --notest --local-lib=$HOME/perl5 local::lib && eval $(perl -I $HOME/perl5/lib/perl5/ -Mlocal::lib)
 fi
 
 nginx -V
