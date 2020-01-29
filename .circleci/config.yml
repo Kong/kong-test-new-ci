@@ -1,73 +1,23 @@
 version: 2.0
 jobs:
-  build:
-    docker:
-      - image: circleci/golang:buster
-      # - image: circleci/redis:latest
-    environment:
-      GOPATH: /home/circleci/install-cache
-    steps:
-      - checkout
-      - restore_cache:
-          key: dependency-cache-{{ checksum ".ci/setup_env.sh" }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".requirements" }}
-      - run: sudo apt update
-      - run: sudo apt install build-essential libpcre3-dev zlib1g-dev libyaml-dev autoconf
-      - run:
-          name: "Install OpenResty and Lua dependencies"
-          command: |
-            source .ci/setup_env.sh
-            make dev
-      - save_cache:
-          key: dependency-cache-{{ checksum ".ci/setup_env.sh" }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".requirements" }}
-          paths:
-            - /home/circleci/install-cache
   lint-and-unit-test:
     docker:
       - image: circleci/golang:buster
-      - image: circleci/postgres:latest
-        environment:
-          POSTGRES_USER: kong_tests
-          POSTGRES_DB: kong_tests
     environment:
-      KONG_TEST_PG_DATABASE: kong_tests
-      KONG_TEST_PG_USER: kong_tests
+      TEST_SUITE: unit
+      KONG_BUILD_TOOLS: origin/test/pdk
     steps:
       - checkout
-      - restore_cache:
-          key: dependency-cache-{{ checksum ".ci/setup_env.sh" }}-{{ checksum ".circleci/config.yml" }}-{{ checksum ".requirements" }}
-      - run: sudo apt update
-      - run: sudo apt install build-essential libpcre3-dev zlib1g-dev libyaml-dev
+      - setup_remote_docker:
+          docker_layer_caching: true
       - run:
-          name: "Lint Lua code"
+          name: "Lint & Unit test Lua code"
           command: |
-            export INSTALL_ROOT=$HOME/install-cache
-            export OPENSSL_INSTALL=$INSTALL_ROOT/openssl
-            export OPENRESTY_INSTALL=$INSTALL_ROOT/openresty
-            export LUAROCKS_INSTALL=$INSTALL_ROOT/luarocks
-
-            export OPENSSL_DIR=$OPENSSL_INSTALL # for LuaSec install
-
-            export PATH=$OPENSSL_INSTALL/bin:$OPENRESTY_INSTALL/nginx/sbin:$OPENRESTY_INSTALL/bin:$LUAROCKS_INSTALL/bin:$PATH
-            export LD_LIBRARY_PATH=$OPENSSL_INSTALL/lib:$LD_LIBRARY_PATH # for openssl's CLI invoked in the test suite
-            eval `luarocks path`
-
-            luacheck -q .
-            scripts/autodoc-admin-api
-      - run:
-          name: "Unit tests"
-          command: |
-            export INSTALL_ROOT=$HOME/install-cache
-            export OPENSSL_INSTALL=$INSTALL_ROOT/openssl
-            export OPENRESTY_INSTALL=$INSTALL_ROOT/openresty
-            export LUAROCKS_INSTALL=$INSTALL_ROOT/luarocks
-
-            export OPENSSL_DIR=$OPENSSL_INSTALL # for LuaSec install
-
-            export PATH=$OPENSSL_INSTALL/bin:$OPENRESTY_INSTALL/nginx/sbin:$OPENRESTY_INSTALL/bin:$LUAROCKS_INSTALL/bin:$PATH
-            export LD_LIBRARY_PATH=$OPENSSL_INSTALL/lib:$LD_LIBRARY_PATH # for openssl's CLI invoked in the test suite
-            eval `luarocks path`
-
-            bin/busted -v -o gtest spec/01-unit
+            export KONG_SOURCE_LOCATION=$CIRCLE_WORKING_DIRECTORY
+            make setup-kong-build-tools
+            cd ../kong-build-tools && make kong-test-container
+            make setup-kong-build-tools
+            cd ../kong-build-tools && make test-kong
   postgres-integration:
     docker:
       - image: circleci/golang:buster
@@ -358,10 +308,7 @@ workflows:
   version: 2
   build-and-test:
     jobs:
-      - build
-      - lint-and-unit-test:
-          requires:
-            - build
+      - lint-and-unit-test
       - postgres-integration:
           requires:
             - lint-and-unit-test
